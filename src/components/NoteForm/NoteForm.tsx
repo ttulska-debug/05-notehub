@@ -8,8 +8,14 @@ import {
 
 import * as Yup from "yup";
 
-import type {
-  CreateNotePayload,
+import {
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
+
+import {
+  createNote,
+  type CreateNotePayload,
 } from "../../services/noteService";
 
 import type { NoteTag } from "../../types/note";
@@ -18,9 +24,6 @@ import css from "./NoteForm.module.css";
 
 interface NoteFormProps {
   onCancel: () => void;
-  onSubmit: (
-    values: CreateNotePayload
-  ) => Promise<unknown>;
 }
 
 const tags: NoteTag[] = [
@@ -53,15 +56,31 @@ const initialValues: CreateNotePayload = {
 
 export default function NoteForm({
   onCancel,
-  onSubmit,
 }: NoteFormProps) {
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation({
+    mutationFn: (values: CreateNotePayload) =>
+      createNote(values),
+
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["notes"],
+      });
+
+      onCancel();
+    },
+  });
+
   const handleSubmit = async (
     values: CreateNotePayload,
     helpers: FormikHelpers<CreateNotePayload>
   ): Promise<void> => {
     try {
-      await onSubmit(values);
+      await createMutation.mutateAsync(values);
       helpers.resetForm();
+    } catch {
+      // Помилка обробляється через createMutation.isError
     } finally {
       helpers.setSubmitting(false);
     }
@@ -139,6 +158,12 @@ export default function NoteForm({
             />
           </div>
 
+          {createMutation.isError && (
+            <p className={css.error}>
+              Could not create the note. Please try again.
+            </p>
+          )}
+
           <div className={css.actions}>
             <button
               type="button"
@@ -151,9 +176,9 @@ export default function NoteForm({
             <button
               type="submit"
               className={css.submitButton}
-              disabled={isSubmitting}
+              disabled={isSubmitting || createMutation.isPending}
             >
-              {isSubmitting
+              {isSubmitting || createMutation.isPending
                 ? "Creating..."
                 : "Create note"}
             </button>
